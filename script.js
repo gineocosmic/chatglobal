@@ -1,47 +1,59 @@
-// 🔥 GANTI DENGAN CONFIG FIREBASE KAMU NANTI
-var firebaseConfig = {
-  apiKey: "API_KEY",
-  authDomain: "PROJECT_ID.firebaseapp.com",
-  databaseURL: "https://PROJECT_ID-default-rtdb.firebaseio.com",
-  projectId: "PROJECT_ID",
-  storageBucket: "PROJECT_ID.appspot.com",
-  messagingSenderId: "SENDER_ID",
-  appId: "APP_ID"
-};
-
-// Init Firebase
-firebase.initializeApp(firebaseConfig);
-var database = firebase.database();
-
-var messagesRef = database.ref("globalChat");
-
-// Kirim Pesan
-function sendMessage() {
-  var username = document.getElementById("username").value;
-  var message = document.getElementById("message").value;
-
-  if (username === "" || message === "") return;
-
-  messagesRef.push({
-    name: username,
-    text: message,
-    time: new Date().toLocaleTimeString()
-  });
-
-  document.getElementById("message").value = "";
+body {
+  font-family: Arial, sans-serif;
+  background: linear-gradient(120deg, #1e3c72, #2a5298);
+  margin: 0;
+  padding: 0;
 }
 
-// Terima Pesan
-messagesRef.limitToLast(50).on("child_added", function(snapshot) {
-  var data = snapshot.val();
+.chat-container {
+  width: 90%;
+  max-width: 500px;
+  margin: 40px auto;
+  background: white;
+  border-radius: 10px;
+  padding: 15px;
+  box-shadow: 0 0 10px black;
+}
 
-  var msgDiv = document.createElement("div");
-  msgDiv.className = "message";
-  msgDiv.innerText = `[${data.time}] ${data.name}: ${data.text}`;
+h2 {
+  text-align: center;
+}
 
-  document.getElementById("messages").appendChild(msgDiv);
+.chat-box {
+  height: 350px;
+  border: 1px solid #ccc;
+  overflow-y: auto;
+  padding: 10px;
+  margin-bottom: 10px;
+}
 
-  // Auto scroll ke bawah
-  var chatBox = document.getElementById("messages");
-  chatBox.scrollTop = chatBox.scrollHeight;
-});
+.chat-message {
+  margin-bottom: 8px;
+}
+
+.chat-message span {
+  font-weight: bold;
+  color: #2a5298;
+}
+
+.input-area {
+  display: flex;
+  gap: 5px;
+}
+
+input {
+  flex: 1;
+  padding: 8px;
+}
+
+button {
+  padding: 8px 15px;
+  background: #2a5298;
+  color: white;
+  border: none;
+  cursor: pointer;
+}
+
+button:hover {
+  background: #1e3c72;
+}

@@ -1,131 +1,70 @@
-/* ===== GLOBAL ===== */
-body {
-  font-family: "Segoe UI", Arial, sans-serif;
-  background: linear-gradient(135deg, #1e3c72, #2a5298);
-  margin: 0;
-  padding: 0;
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  height: 100vh;
+/* header row */
+.header-row {
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:10px;
+}
+.header-actions { display:flex; gap:8px; align-items:center; }
+
+/* profile modal */
+.modal {
+  position: fixed;
+  inset: 0;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  background: rgba(0,0,0,0.4);
+}
+.modal[aria-hidden="true"] { display:none; }
+.modal-content {
+  background:#fff;
+  width:92%;
+  max-width:420px;
+  border-radius:12px;
+  padding:16px;
+  box-shadow:0 8px 30px rgba(0,0,0,0.3);
+}
+.color-choices { display:flex; gap:8px; padding:8px 0; }
+.color-dot {
+  width:34px; height:34px; border-radius:50%; border:2px solid transparent; cursor:pointer;
+}
+.color-dot.selected { outline:3px solid rgba(0,0,0,0.08); transform:scale(1.05); }
+
+/* avatar preview */
+.avatar-preview {
+  width:72px; height:72px; border-radius:8px; border:1px solid #ddd;
+  background-size:cover; background-position:center; margin-top:8px;
 }
 
-/* ===== CHAT CONTAINER ===== */
-.chat-container {
-  width: 95%;
-  max-width: 500px;
-  background: #ffffff;
-  border-radius: 16px;
-  padding: 15px;
-  box-shadow: 0 8px 20px rgba(0,0,0,0.4);
-  display: flex;
-  flex-direction: column;
-  height: 90vh;
-}
-
-/* ===== TITLE ===== */
-h2 {
-  text-align: center;
-  margin-top: 0;
-  color: #2a5298;
-  font-size: 22px;
-  font-weight: bold;
-}
-
-/* ===== CHAT BOX ===== */
-#chatBox {
-  flex: 1;
-  border: 2px solid #d8e2f3;
-  border-radius: 10px;
-  padding: 10px;
-  overflow-y: auto;
-  background: #f7faff;
-  margin-bottom: 10px;
-  scroll-behavior: smooth;
-}
-
-/* ===== BUBBLE MESSAGE ===== */
+/* chat message avatar & layout */
 .chat-message {
-  margin-bottom: 10px;
-  padding: 8px 12px;
-  max-width: 80%;
-  background: #ffffff;
-  border-radius: 10px;
-  box-shadow: 0 2px 5px rgba(0,0,0,0.15);
-  word-wrap: break-word;
+  display:flex;
+  gap:10px;
+  align-items:flex-start;
+  margin-bottom:10px;
+  max-width:85%;
 }
-
-.chat-message.mine {
-  background: #dfffd8;
-  margin-left: auto;
-  border-radius: 10px 10px 0 10px;
-  font-weight: 600;
+.chat-message.mine { margin-left:auto; flex-direction:row-reverse; }
+.msg-avatar {
+  width:36px; height:36px; border-radius:6px; background:#eee; flex-shrink:0;
+  display:flex; align-items:center; justify-content:center; font-weight:700; color:#fff;
 }
+.msg-body { background:#fff; padding:8px 12px; border-radius:10px; box-shadow:0 2px 6px rgba(0,0,0,0.06); }
+.chat-message.mine .msg-body { background:#dcf7d8; }
 
-/* username */
-.chat-message strong {
-  color: #254381;
-}
+/* small name above text */
+.msg-name { font-weight:700; color:#254381; display:block; margin-bottom:4px; }
 
-/* timestamp */
-.chat-message small {
-  display: block;
-  font-size: 10px;
-  color: #666;
-  margin-top: 3px;
-}
+/* input area tweaks */
+.input-area input#messageInput { border-radius:20px; padding:12px 14px; }
+.input-area button { border-radius:12px; }
 
-/* ===== Input Area ===== */
-.input-area {
-  display: flex;
-  gap: 5px;
-}
+/* toast */
+.toast { position:fixed; bottom:20px; left:50%; transform:translateX(-50%); background:#1e3c72; color:#fff; padding:10px 16px; border-radius:10px; }
 
-#messageInput {
-  flex: 1;
-  padding: 10px;
-  border-radius: 12px;
-  border: 2px solid #2a5298;
-  outline: none;
-  font-size: 16px;
-}
-
-#messageInput:focus {
-  border-color: #1e3c72;
-}
-
-button {
-  padding: 10px 15px;
-  background: #2a5298;
-  color: white;
-  border: none;
-  border-radius: 12px;
-  cursor: pointer;
-  font-weight: bold;
-}
-
-button:hover {
-  background: #1e3c72;
-}
-
-/* ===== SCROLLBAR ===== */
-#chatBox::-webkit-scrollbar {
-  width: 6px;
-}
-
-#chatBox::-webkit-scrollbar-thumb {
-  background: #2a5298;
-  border-radius: 10px;
-}
-
-#chatBox::-webkit-scrollbar-track {
-  background: #d8e2f3;
-}
-
-/* ===== RESPONSIVE ===== */
-@media (max-width: 480px) {
-  .chat-container {
-    height: 95vh;
-    padding: 10px;
-  }
+/* responsive tweaks (mobile) */
+@media (max-width:480px) {
+  .modal-content { width:94%; padding:12px; }
+  .avatar-preview { width:64px; height:64px; }
 }

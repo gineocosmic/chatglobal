@@ -1,28 +1,38 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="id">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Chat Global</title>
   <link rel="stylesheet" href="style.css">
 </head>
+
 <body>
 
-<div id="chat-container">
-  <div id="messages"></div>
+<div class="chat-container">
+  <h2 id="roomTitle">Chat Global</h2>
 
-  <div id="input-container">
-    <input type="text" id="message-input" placeholder="Tulis pesan...">
-    <button id="send-btn">Kirim</button>
+  <div id="chatBox"></div>
+
+  <div class="input-area">
+    <input type="text" id="messageInput" placeholder="Tulis pesan..." />
+    <button onclick="sendMessage()">Kirim</button>
   </div>
+
 </div>
 
-<script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
-<script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-firestore.js"></script>
+<!-- Firebase SDK -->
+<script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
+<script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-database.js"></script>
 
-<script src="firebase.js"></script>
-<script src="utils.js"></script>
+<!-- Main script -->
 <script src="script.js"></script>
+
+<script>
+// Update title sesuai room
+const params = new URLSearchParams(window.location.search);
+document.getElementById("roomTitle").textContent = "Room: " + (params.get("room") || "global");
+</script>
 
 </body>
 </html>

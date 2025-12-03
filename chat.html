@@ -10,10 +10,25 @@
 <body>
 
 <div class="chat-container">
-  <h2 id="roomTitle">Chat Global</h2>
 
-  <div id="chatBox"></div>
+  <!-- ===== ROOM TITLE ===== -->
+  <h2 id="roomTitle">Loading room...</h2>
 
+  <!-- ===== ONLINE COUNTER ===== -->
+  <div id="onlineCount"
+    style="text-align:center; color:#ffffff; margin-bottom:10px; font-size:14px;">
+    Loading...
+  </div>
+
+  <!-- ===== CHAT BOX ===== -->
+  <div id="chatBox" class="chat-box"></div>
+
+  <!-- ===== TYPING INDICATOR ===== -->
+  <div id="typingStatus"
+    style="padding:6px; font-size:13px; color:#ffffff; height:18px;">
+  </div>
+
+  <!-- ===== INPUT ===== -->
   <div class="input-area">
     <input type="text" id="messageInput" placeholder="Tulis pesan..." />
     <button onclick="sendMessage()">Kirim</button>
@@ -21,17 +36,29 @@
 
 </div>
 
-<!-- Firebase SDK -->
+<!-- ===== TOAST POPUP ===== -->
+<div id="toast"
+  style="position:fixed;bottom:20px;left:50%;transform:translateX(-50%);
+  padding:10px 20px;background:#1e3c72;color:white;border-radius:10px;
+  font-size:14px;display:none;box-shadow:0 0 10px rgba(0,0,0,0.5);">
+</div>
+
+<!-- ===== FIREBASE SDK ===== -->
 <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
 <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-database.js"></script>
 
-<!-- Main script -->
+<!-- ===== MAIN SCRIPT ===== -->
 <script src="script.js"></script>
 
+<!-- ===== SET ROOM TITLE FROM URL ===== -->
 <script>
-// Update title sesuai room
-const params = new URLSearchParams(window.location.search);
-document.getElementById("roomTitle").textContent = "Room: " + (params.get("room") || "global");
+  const params = new URLSearchParams(window.location.search);
+  const room = params.get("room") || "global";
+
+  // Format room name tampil cantik
+  const formattedRoom = room.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase());
+
+  document.getElementById("roomTitle").textContent = "Room: " + formattedRoom;
 </script>
 
 </body>

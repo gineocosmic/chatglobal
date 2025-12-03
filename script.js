@@ -1,33 +1,11 @@
-// ==========================
-// script.js - FINAL
-// ==========================
-
-// --------------------------
-// Helpers & config
-// --------------------------
+// ------------------------------
+// script.js (profile + avatar upload + all features)
+// ------------------------------
 const params = new URLSearchParams(window.location.search);
 const room = (params.get("room") || "global").toLowerCase();
-
-// ensure we have a simple room key that uses underscores instead of spaces
 const roomKey = room.replace(/\s+/g, "_");
 
-// anonymous user id + username
-let userId = localStorage.getItem("chatglobal_id");
-if (!userId) {
-  userId = "u" + Math.random().toString(36).slice(2, 10);
-  localStorage.setItem("chatglobal_id", userId);
-}
-let username = localStorage.getItem("chatglobal_user");
-if (!username) {
-  username = "User#" + Math.floor(1000 + Math.random() * 9000);
-  localStorage.setItem("chatglobal_user", username);
-}
-
-// show username in UI if element exists (back-compat)
-const usernameEl = document.getElementById("username");
-if (usernameEl) usernameEl.value = username;
-
-// Firebase config (your project)
+// Firebase config (isi milikmu)
 var firebaseConfig = {
   apiKey: "AIzaSyB-IAj8gKwvObCoo7hRJNW6HK67UMtBadc",
   authDomain: "chatglobal-ef22a.firebaseapp.com",
@@ -39,7 +17,9 @@ var firebaseConfig = {
   measurementId: "G-4ZBT61V36P"
 };
 if (!firebase.apps.length) firebase.initializeApp(firebaseConfig);
-const database = firebase.database();
+const auth = firebase.auth();
+const db = firebase.database();
+const storage = firebase.storage();
 
 // UI refs
 const chatBox = document.getElementById("chatBox");
@@ -48,304 +28,289 @@ const onlineCountDiv = document.getElementById("onlineCount");
 const roomTitleEl = document.getElementById("roomTitle");
 const toastEl = document.getElementById("toast");
 const messageInput = document.getElementById("messageInput");
+const profileBtn = document.getElementById("profileBtn");
+const profileModal = document.getElementById("profileModal");
+const closeProfileBtn = document.getElementById("closeProfileBtn");
+const saveProfileBtn = document.getElementById("saveProfileBtn");
+const avatarInput = document.getElementById("avatarInput");
+const avatarPreview = document.getElementById("avatarPreview");
+const profileNameInput = document.getElementById("profileName");
+const colorChoices = document.getElementById("colorChoices");
 
-// constants
-const MAX_CHARS = 250;
-let lastSendTime = 0;
-let userInteracted = false;
-const notificationSound = new Audio("https://cdn.pixabay.com/audio/2022/03/15/audio_8bfb58b4fc.mp3");
-notificationSound.preload = "auto";
+// local user settings stored in localStorage
+let localUser = {
+  uid: localStorage.getItem("chat_uid") || null,
+  username: localStorage.getItem("chat_username") || null,
+  color: localStorage.getItem("chat_color") || "#4f9cff",
+  avatar: localStorage.getItem("chat_avatar") || null
+};
 
-// Notification permission on first click
-window.addEventListener("click", () => {
-  userInteracted = true;
-  if (Notification.permission === "default") Notification.requestPermission();
-}, { once: true });
-
-// --------------------------
-// Utility functions
-// --------------------------
-function sanitize(s) {
-  if (s === undefined || s === null) return "";
-  return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+// if no username, generate default
+if (!localUser.username) {
+  localUser.username = "User#" + Math.floor(1000 + Math.random() * 9000);
+}
+if (!localUser.uid) {
+  // we'll set uid after anonymous auth
 }
 
-function truncate(s, n){
-  if (!s) return "";
-  return s.length > n ? s.substr(0,n-1) + "…" : s;
-}
+// show placeholder username in modal if exists
+if (profileNameInput) profileNameInput.value = localUser.username;
+if (avatarPreview && localUser.avatar) avatarPreview.style.backgroundImage = `url(${localUser.avatar})`;
 
-// convert country code (e.g. "ID") to flag emoji
-function countryCodeToFlagEmoji(cc) {
-  if (!cc) return "";
-  // cc should be 2 letters
-  cc = cc.toUpperCase();
-  const OFFSET = 0x1F1E6 - 65; // Regional Indicator Symbol Letter A minus 'A' code
-  const chars = [...cc].map(c => String.fromCodePoint(c.charCodeAt(0) + OFFSET)).join('');
-  return chars;
-}
+// Anonymous auth (needed for Storage secure upload)
+auth.signInAnonymously().catch(e => console.log("auth err", e));
+auth.onAuthStateChanged(user => {
+  if (!user) return;
+  localUser.authUid = user.uid;
+  // persist a stable client id (prefer auth uid)
+  localUser.uid = localUser.uid || user.uid;
+  localStorage.setItem("chat_uid", localUser.uid);
+  // register presence & other realtime features now that auth is ready
+  registerPresence();
+});
 
-// show toast for N ms
-function showToast(msg, ms = 3000) {
-  if (!toastEl) return;
-  toastEl.textContent = msg;
-  toastEl.style.display = "block";
-  clearTimeout(toastEl._timer);
-  toastEl._timer = setTimeout(() => {
-    toastEl.style.display = "none";
-  }, ms);
-}
+// =================== utilities ===================
+function sanitize(s){ if (!s && s!==0) return ""; return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;"); }
+function truncate(s,n){ if(!s) return ""; return s.length>n? s.substr(0,n-1)+"…" : s; }
+function ccToFlag(cc){ if(!cc) return ""; cc = cc.toUpperCase(); const OFFSET = 0x1F1E6 - 65; return [...cc].map(c=>String.fromCodePoint(c.charCodeAt(0)+OFFSET)).join(''); }
+function showToast(msg,ms=3000){ if(!toastEl) return; toastEl.textContent = msg; toastEl.style.display = "block"; clearTimeout(toastEl._t); toastEl._t = setTimeout(()=>toastEl.style.display="none", ms); }
 
-// format room display name from key
-function formatRoomName(k) {
-  return k.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase());
-}
+// ---------------- presence & online count ----------------
+let myCity = null, myCountry = null, myCountryCode = null;
+fetch("https://ipapi.co/json").then(r=>r.json()).then(info=>{
+  myCity = (info.city||"").toLowerCase().replace(/\s+/g,"_") || null;
+  myCountry = info.country_name || null;
+  myCountryCode = info.country_code || null;
+  updateHeader(); // update header with flag if possible
+  showToast(`Selamat datang di ${roomKey.replace(/_/g," ")} ${ccToFlag(myCountryCode)}`,3000);
+}).catch(()=>{ updateHeader(); });
 
-// --------------------------
-// Header / room title update
-// --------------------------
-(function initRoomTitle(){
-  const display = formatRoomName(roomKey);
-  if (roomTitleEl) roomTitleEl.textContent = "Room: " + display;
-})();
-
-// --------------------------
-// Presence (online users) and country detection
-// --------------------------
-// We'll detect city/country via ipapi.co; fallback: country empty
-
-let myCity = null;
-let myCountry = null;
-let myCountryCode = null;
-
-// get geo info (non-blocking). For privacy we only store city and country_code.
-fetch("https://ipapi.co/json")
-  .then(r => r.json())
-  .then(info => {
-    myCity = (info.city || "").toLowerCase().replace(/\s+/g,"_") || null;
-    myCountry = info.country_name || null;
-    myCountryCode = info.country_code || null;
-    // after we have country info, we can update presence
-    registerPresence();
-    // show welcome toast with flag
-    const flag = countryCodeToFlagEmoji(myCountryCode);
-    showToast(`Selamat datang di ${formatRoomName(roomKey)} ${flag}`, 3500);
-    // update header online text initially (flag also)
-    updateHeaderOnlineTextPlaceholder();
-  })
-  .catch(err => {
-    console.log("ip detect failed", err);
-    // still register presence even without country
-    registerPresence();
-    updateHeaderOnlineTextPlaceholder();
-  });
-
-// presence path: presence/<roomKey>/<userId>
-const presenceRef = () => database.ref(`presence/${roomKey}/${userId}`);
+// presence path
+function presenceRef(){ return db.ref(`presence/${roomKey}/${localUser.uid}`); }
 
 function registerPresence(){
-  // data we store: username, city, country_code, ts
-  const data = {
-    username,
-    city: myCity || null,
-    country_code: myCountryCode || null,
-    ts: Date.now()
-  };
-
-  // set presence
-  presenceRef().set(data).catch(e => console.log("presence set error", e));
-
-  // ensure removal on disconnect
+  if (!localUser.uid) return; // wait auth
+  const data = { username: localUser.username, avatar: localUser.avatar || null, color: localUser.color, ts: Date.now(), city: myCity || null, country_code: myCountryCode || null };
+  presenceRef().set(data).catch(()=>{});
   presenceRef().onDisconnect().remove();
-
-  // also refresh ts periodically (heartbeat)
-  setInterval(() => {
-    presenceRef().update({ ts: Date.now() }).catch(()=>{});
-  }, 30 * 1000); // 30s
-}
-
-// listen to presence list and update online counter
-database.ref(`presence/${roomKey}`).on("value", snap => {
-  const val = snap.val() || {};
-  const users = Object.keys(val);
-  const count = users.length;
-
-  // build display: 🟢 N Online • RoomName 🇺🇸
-  const flag = countryCodeToFlagEmoji(myCountryCode);
-  const roomName = formatRoomName(roomKey);
-  const displayText = `🟢 ${count} Online • ${roomName} ${flag}`;
-  if (onlineCountDiv) onlineCountDiv.textContent = displayText;
-
-  // If count is zero (we're probably the only one), still show room + flag handled above
-});
-
-// helper to update header quickly before ipapi resolved
-function updateHeaderOnlineTextPlaceholder(){
-  const flag = countryCodeToFlagEmoji(myCountryCode);
-  const roomName = formatRoomName(roomKey);
-  if (onlineCountDiv) onlineCountDiv.textContent = `🟢 - Online • ${roomName} ${flag || ""}`;
-}
-
-// --------------------------
-// Typing indicator
-// --------------------------
-let typingTimeout;
-function sendTypingSignal() {
-  database.ref(`rooms/${roomKey}/typing/${userId}`).set({ username, ts: Date.now() }).catch(()=>{});
-  clearTimeout(typingTimeout);
-  typingTimeout = setTimeout(() => {
-    database.ref(`rooms/${roomKey}/typing/${userId}`).remove().catch(()=>{});
-  }, 1200);
-}
-
-if (messageInput) {
-  messageInput.addEventListener("input", sendTypingSignal);
-  messageInput.addEventListener("keypress", (e) => {
-    if (e.key === "Enter") {
-      sendTypingSignal(); // ensure stop typing after send (sendMessage will remove)
-    } else {
-      sendTypingSignal();
-    }
+  setInterval(()=>presenceRef().update({ts:Date.now()}).catch(()=>{}), 30000);
+  // listen online count
+  db.ref(`presence/${roomKey}`).on("value", s => {
+    const val = s.val()||{};
+    const count = Object.keys(val).length;
+    const flag = ccToFlag(myCountryCode);
+    if (onlineCountDiv) onlineCountDiv.textContent = `🟢 ${count} Online • ${formatRoomName(roomKey)} ${flag||""}`;
   });
 }
 
-// listen for typing list changes
-database.ref(`rooms/${roomKey}/typing`).on("value", snap => {
-  const val = snap.val() || {};
-  const other = Object.keys(val || {}).filter(id => id !== userId).map(id => val[id].username);
-  if (typingStatusDiv) {
-    typingStatusDiv.textContent = other.length > 0 ? `${other.join(", ")} sedang mengetik...` : "";
-  }
+function formatRoomName(k){ return k.replace(/_/g," ").replace(/\b\w/g,c=>c.toUpperCase()); }
+function updateHeader(){ if (onlineCountDiv) onlineCountDiv.textContent = `🟢 - Online • ${formatRoomName(roomKey)} ${ccToFlag(myCountryCode)||""}`; }
+
+// ---------------- typing indicator ----------------
+let typingTimeout;
+function sendTypingSignal(){
+  if (!localUser.uid) return;
+  db.ref(`rooms/${roomKey}/typing/${localUser.uid}`).set({username: localUser.username, ts: Date.now()}).catch(()=>{});
+  clearTimeout(typingTimeout);
+  typingTimeout = setTimeout(()=>{ db.ref(`rooms/${roomKey}/typing/${localUser.uid}`).remove().catch(()=>{}); }, 1200);
+}
+if (messageInput){
+  messageInput.addEventListener("input", sendTypingSignal);
+  messageInput.addEventListener("keypress", e=>{ if(e.key==="Enter"){ sendTypingSignal(); } else sendTypingSignal(); });
+}
+db.ref(`rooms/${roomKey}/typing`).on("value", s=>{
+  const val = s.val()||{};
+  const other = Object.keys(val||{}).filter(id=>id!==localUser.uid).map(id=>val[id].username);
+  typingStatusDiv.textContent = other.length>0 ? `${other.join(", ")} sedang mengetik...` : "";
 });
 
-// --------------------------
-// Messages: send / receive
-// --------------------------
-function sendMessage() {
-  const input = document.getElementById("messageInput");
-  if (!input) return;
-  const message = input.value.trim();
+// ---------------- messages send/receive ----------------
+const MAX_CHARS = 250;
+let lastSend = 0;
+function sendMessage(){
+  const el = document.getElementById("messageInput");
+  if(!el) return;
+  const txt = el.value.trim();
   const now = Date.now();
-
-  if (message === "") return;
-  if (message.length > MAX_CHARS) {
-    alert(`Pesan terlalu panjang (maks ${MAX_CHARS} karakter)`);
-    return;
-  }
-  if (now - lastSendTime < 3000) {
-    alert("Tunggu 3 detik sebelum mengirim pesan lagi");
-    return;
-  }
-  lastSendTime = now;
+  if (!txt) return;
+  if (txt.length>MAX_CHARS){ alert(`Pesan terlalu panjang (maks ${MAX_CHARS})`); return; }
+  if (now - lastSend < 3000){ alert("Tunggu 3 detik sebelum mengirim lagi"); return; }
+  lastSend = now;
 
   const payload = {
-    userId,
-    name: username,
-    text: message,
-    ts: Date.now(),
+    userId: localUser.uid,
+    name: localUser.username,
+    text: txt,
     time: new Date().toLocaleTimeString(),
-    city: myCity || null,
-    country_code: myCountryCode || null
+    color: localUser.color,
+    avatar: localUser.avatar || null,
+    ts: Date.now()
   };
-
-  database.ref(`rooms/${roomKey}/messages`).push(payload).catch(e => console.log("push err", e));
-  input.value = "";
-  // remove typing signal on send
-  database.ref(`rooms/${roomKey}/typing/${userId}`).remove().catch(()=>{});
-  userInteracted = true;
+  db.ref(`rooms/${roomKey}/messages`).push(payload).catch(e=>console.log(e));
+  el.value = "";
+  // remove typing
+  db.ref(`rooms/${roomKey}/typing/${localUser.uid}`).remove().catch(()=>{});
 }
 
-// support Enter to send also
-if (messageInput) {
-  messageInput.addEventListener("keypress", (e) => {
-    if (e.key === "Enter") {
-      e.preventDefault();
-      sendMessage();
-    }
-  });
-}
-
-// receive messages
-let pageFocus = true;
-let originalTitle = document.title || "Chat Global";
-let blinkInterval = null;
-window.onfocus = () => {
-  pageFocus = true;
-  document.title = originalTitle;
-  if (blinkInterval) { clearInterval(blinkInterval); blinkInterval = null; }
-};
-window.onblur = () => { pageFocus = false; };
-
-function startBlinkTitle(msg) {
-  if (blinkInterval) return;
-  let showAlt = true;
-  blinkInterval = setInterval(() => {
-    document.title = showAlt ? msg : originalTitle;
-    showAlt = !showAlt;
-  }, 700);
-  setTimeout(() => {
-    if (blinkInterval) { clearInterval(blinkInterval); blinkInterval = null; document.title = originalTitle; }
-  }, 6000);
-}
-
-// message rendering
-database.ref(`rooms/${roomKey}/messages`).limitToLast(200).on("child_added", snap => {
+// render message with avatar and color
+db.ref(`rooms/${roomKey}/messages`).limitToLast(200).on("child_added", snap=>{
   const data = snap.val();
-  if (!data) return;
-
-  // build message element
+  if(!data) return;
   const div = document.createElement("div");
   div.classList.add("chat-message");
-  if (data.userId === userId) div.classList.add("mine");
+  if (data.userId === localUser.uid) div.classList.add("mine");
 
-  // small flag next to username if available
-  const flag = data.country_code ? countryCodeToFlagEmoji(data.country_code) + " " : "";
-
-  div.innerHTML = `<strong>${sanitize(flag + (data.name || "Anon"))}</strong>: ${sanitize(data.text)} <small>(${sanitize(data.time)})</small>`;
-
-  if (chatBox) {
-    chatBox.appendChild(div);
-    chatBox.scrollTop = chatBox.scrollHeight;
+  // avatar
+  const avatarDiv = document.createElement("div");
+  avatarDiv.classList.add("msg-avatar");
+  if (data.avatar) {
+    avatarDiv.style.backgroundImage = `url(${data.avatar})`;
+    avatarDiv.style.backgroundSize = "cover";
+    avatarDiv.style.backgroundPosition = "center";
+  } else {
+    // show initials
+    const initials = (data.name||"U").split(" ").map(x=>x[0]).slice(0,2).join("").toUpperCase();
+    avatarDiv.textContent = initials;
+    avatarDiv.style.background = data.color || localUser.color;
   }
 
-  // notifications if not focused & message not from self
-  if (!pageFocus && data.userId !== userId) {
-    if (userInteracted) {
-      notificationSound.play().catch(()=>{});
+  // message body
+  const body = document.createElement("div");
+  body.classList.add("msg-body");
+  const name = document.createElement("span");
+  name.classList.add("msg-name");
+  name.textContent = `${data.name || "Anon"}`;
+  const text = document.createElement("div");
+  text.innerHTML = sanitize(data.text) + `<div style="font-size:11px;color:#666;margin-top:6px;">(${sanitize(data.time)})</div>`;
+
+  body.appendChild(name);
+  body.appendChild(text);
+
+  div.appendChild(avatarDiv);
+  div.appendChild(body);
+
+  chatBox.appendChild(div);
+  chatBox.scrollTop = chatBox.scrollHeight;
+});
+
+// notification + blink (kept simple)
+let pageFocus = true; let origTitle = document.title || "Chat Global"; let blinkInt = null;
+window.onfocus = ()=>{ pageFocus = true; document.title = origTitle; if (blinkInt) { clearInterval(blinkInt); blinkInt=null; } };
+window.onblur = ()=>{ pageFocus = false; };
+db.ref(`rooms/${roomKey}/messages`).limitToLast(1).on("child_added", s=>{
+  const d = s.val();
+  if (!d) return;
+  if (!pageFocus && d.userId !== localUser.uid) {
+    // play sound (if user interacted)
+    try{ if (window.__userInteracted) { (new Audio("https://cdn.pixabay.com/audio/2022/03/15/audio_8bfb58b4fc.mp3")).play().catch(()=>{}); } }catch(e){}
+    // blink
+    if (!blinkInt) {
+      let alt=true; blinkInt = setInterval(()=>{ document.title = alt? "🔔 Pesan Baru!": origTitle; alt=!alt; },700);
+      setTimeout(()=>{ clearInterval(blinkInt); blinkInt=null; document.title=origTitle; },5000);
     }
-    startBlinkTitle("🔔 Pesan Baru!");
-    if (Notification.permission === "granted") {
-      try {
-        const n = new Notification(`${data.name}`, { body: truncate(data.text || "", 80) });
-        n.onclick = () => { window.focus(); n.close(); };
-      } catch (e) {
-        console.log("notif error", e);
-      }
+    // desktop notif
+    if (Notification.permission==="granted") {
+      try{ const n=new Notification(`${d.name}`,{body:truncate(d.text,80)}); n.onclick=()=>{ window.focus(); n.close(); } }catch(e){}
     }
   }
 });
 
-// --------------------------
-// Cleanup on unload
-// --------------------------
-window.addEventListener("beforeunload", () => {
-  // remove typing and presence (onDisconnect ideally handles it; but ensure remove)
-  database.ref(`rooms/${roomKey}/typing/${userId}`).remove().catch(()=>{});
-  presenceRef().remove().catch(()=>{});
+// ---------------- profile modal handling & avatar upload ----------------
+profileBtn.addEventListener("click", ()=>{ profileModal.setAttribute("aria-hidden","false"); });
+closeProfileBtn.addEventListener("click", ()=>{ profileModal.setAttribute("aria-hidden","true"); });
+
+// color pick logic
+document.querySelectorAll('.color-dot').forEach(btn=>{
+  btn.addEventListener("click", ()=> {
+    document.querySelectorAll('.color-dot').forEach(x=>x.classList.remove('selected'));
+    btn.classList.add('selected');
+    localUser.color = btn.getAttribute('data-color');
+  });
 });
 
-// --------------------------
-// Small UI init: show room name & flag in header
-// --------------------------
-(function updateHeaderInitial(){
-  // if ipapi not ready yet, the presence registration will update later
-  const roomPretty = formatRoomName(roomKey);
-  // we cannot guarantee country flag yet; update will occur after ipapi fetch
-  if (roomTitleEl) {
-    roomTitleEl.textContent = `Room: ${roomPretty}`;
+// avatar preview read
+let selectedFile = null;
+avatarInput.addEventListener("change", (ev)=>{
+  const f = ev.target.files[0];
+  if (!f) return;
+  if (f.size > 2*1024*1024) { alert("Ukuran file maksimal 2MB"); avatarInput.value=""; return; }
+  selectedFile = f;
+  // preview
+  const reader = new FileReader();
+  reader.onload = e => {
+    avatarPreview.style.backgroundImage = `url(${e.target.result})`;
+    avatarPreview.style.display = "block";
+  };
+  reader.readAsDataURL(f);
+});
+
+// save profile: name, color, upload avatar if provided
+saveProfileBtn.addEventListener("click", async ()=>{
+  const newName = profileNameInput.value.trim();
+  if (newName) {
+    localUser.username = newName;
+    localStorage.setItem("chat_username", localUser.username);
+  }
+  // if color not set, read selected
+  const sel = document.querySelector('.color-dot.selected');
+  if (sel) localUser.color = sel.getAttribute('data-color');
+  localStorage.setItem("chat_color", localUser.color);
+
+  // upload avatar if a file selected
+  if (selectedFile) {
+    try {
+      // ensure auth ready
+      const currentUser = auth.currentUser;
+      if (!currentUser) { alert("Tunggu sebentar, koneksi auth belum siap."); return; }
+      const ext = selectedFile.name.split('.').pop();
+      const storageRef = storage.ref().child(`avatars/${currentUser.uid}.${ext}`);
+      const task = storageRef.put(selectedFile);
+      showToast("Mengunggah foto...");
+      await task;
+      const url = await storageRef.getDownloadURL();
+      localUser.avatar = url;
+      localStorage.setItem("chat_avatar", url);
+      // update presence node if exists
+      if (localUser.uid) db.ref(`presence/${roomKey}/${localUser.uid}`).update({ avatar: url }).catch(()=>{});
+      showToast("Foto profil tersimpan", 2000);
+    } catch (e) {
+      console.error("upload error", e);
+      alert("Upload gagal. Coba lagi.");
+    }
+  } else {
+    // no new avatar, keep existing
+  }
+
+  // update presence username/color
+  if (localUser.uid) {
+    db.ref(`presence/${roomKey}/${localUser.uid}`).update({ username: localUser.username, color: localUser.color, avatar: localUser.avatar || null }).catch(()=>{});
+  }
+
+  profileModal.setAttribute("aria-hidden","true");
+});
+
+// ---------------- helper: ensure presence uses a stable uid ----------------
+(function ensureLocalUid(){
+  if (!localUser.uid) {
+    // if auth exists, prefer auth.uid
+    if (auth.currentUser && auth.currentUser.uid) {
+      localUser.uid = auth.currentUser.uid;
+      localStorage.setItem("chat_uid", localUser.uid);
+    } else {
+      // fallback generate
+      localUser.uid = localStorage.getItem("chat_uid") || "u"+Math.random().toString(36).slice(2,9);
+      localStorage.setItem("chat_uid", localUser.uid);
+    }
   }
 })();
 
-// --------------------------
-// End of file
-// --------------------------
+// register presence if auth already ready
+if (auth.currentUser) registerPresence();
+
+// ---------------- cleanup on leave ----------------
+window.addEventListener("beforeunload", ()=>{
+  if (localUser && localUser.uid) {
+    db.ref(`rooms/${roomKey}/typing/${localUser.uid}`).remove().catch(()=>{});
+    db.ref(`presence/${roomKey}/${localUser.uid}`).remove().catch(()=>{});
+  }
+});

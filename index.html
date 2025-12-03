@@ -2,27 +2,26 @@
 <html lang="id">
 <head>
   <meta charset="UTF-8" />
-  <title>Chat Global</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Chat Global - Pilih Room</title>
   <link rel="stylesheet" href="style.css" />
 </head>
-<body>
 
+<body>
   <div class="chat-container">
     <h2>🌍 Chat Global</h2>
+    <p style="text-align:center; margin-bottom:15px;">Pilih room chat:</p>
 
-    <div class="chat-box" id="chatBox"></div>
+    <button onclick="location.href='chat.html?room=global'">🌍 Global</button>
+    <button onclick="location.href='chat.html?room=jakarta'">🏙 Jakarta</button>
+    <button onclick="location.href='chat.html?room=bandung'">🌄 Bandung</button>
+    <button onclick="location.href='chat.html?room=surabaya'">⚓ Surabaya</button>
+    <button onclick="location.href='chat.html?room=medan'">🌋 Medan</button>
 
-    <div class="input-area">
-      <input type="text" id="username" placeholder="Nama kamu..." />
-      <input type="text" id="messageInput" placeholder="Tulis pesan..." />
-      <button onclick="sendMessage()">Kirim</button>
-    </div>
+    <br><br>
+    <small style="text-align:center; display:block; color:#fff;">
+      Versi MVP ChatGlobal | Realtime Firebase
+    </small>
   </div>
-
-  <!-- Firebase CDN -->
-  <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-database.js"></script>
-
-  <script src="script.js"></script>
 </body>
 </html>

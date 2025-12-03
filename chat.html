@@ -1,65 +1,92 @@
 <!DOCTYPE html>
 <html lang="id">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>Chat Global</title>
-  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="style.css" />
 </head>
-
 <body>
 
 <div class="chat-container">
 
-  <!-- ===== ROOM TITLE ===== -->
-  <h2 id="roomTitle">Loading room...</h2>
-
-  <!-- ===== ONLINE COUNTER ===== -->
-  <div id="onlineCount"
-    style="text-align:center; color:#ffffff; margin-bottom:10px; font-size:14px;">
-    Loading...
+  <!-- ROOM HEADER -->
+  <div class="header-row">
+    <h2 id="roomTitle">Loading room...</h2>
+    <div class="header-actions">
+      <button id="profileBtn" class="btn-simple">⚙️ Profil</button>
+    </div>
   </div>
 
-  <!-- ===== CHAT BOX ===== -->
+  <!-- ONLINE COUNTER -->
+  <div id="onlineCount" class="online-count">Loading...</div>
+
+  <!-- CHAT BOX -->
   <div id="chatBox" class="chat-box"></div>
 
-  <!-- ===== TYPING INDICATOR ===== -->
-  <div id="typingStatus"
-    style="padding:6px; font-size:13px; color:#ffffff; height:18px;">
-  </div>
+  <!-- TYPING STATUS -->
+  <div id="typingStatus" class="typing-status"></div>
 
-  <!-- ===== INPUT ===== -->
+  <!-- INPUT ROW -->
   <div class="input-area">
-    <input type="text" id="messageInput" placeholder="Tulis pesan..." />
-    <button onclick="sendMessage()">Kirim</button>
+    <input id="messageInput" type="text" placeholder="Tulis pesan..." />
+    <button id="sendBtn" onclick="sendMessage()">Kirim</button>
   </div>
 
 </div>
 
-<!-- ===== TOAST POPUP ===== -->
-<div id="toast"
-  style="position:fixed;bottom:20px;left:50%;transform:translateX(-50%);
-  padding:10px 20px;background:#1e3c72;color:white;border-radius:10px;
-  font-size:14px;display:none;box-shadow:0 0 10px rgba(0,0,0,0.5);">
+<!-- TOAST -->
+<div id="toast" class="toast" style="display:none"></div>
+
+<!-- PROFILE MODAL -->
+<div id="profileModal" class="modal" aria-hidden="true">
+  <div class="modal-content">
+    <h3>Edit Profil</h3>
+
+    <label>Nama tampil</label>
+    <input id="profileName" type="text" placeholder="Nama tampil..." maxlength="30" />
+
+    <label>Warna bubble</label>
+    <div id="colorChoices" class="color-choices">
+      <!-- warna akan di-render via HTML statis -->
+      <button class="color-dot" data-color="#4f9cff" style="background:#4f9cff"></button>
+      <button class="color-dot" data-color="#6ee7b7" style="background:#6ee7b7"></button>
+      <button class="color-dot" data-color="#f472b6" style="background:#f472b6"></button>
+      <button class="color-dot" data-color="#ffd166" style="background:#ffd166"></button>
+      <button class="color-dot" data-color="#ff8a80" style="background:#ff8a80"></button>
+      <button class="color-dot" data-color="#9e9e9e" style="background:#9e9e9e"></button>
+    </div>
+
+    <label>Upload Foto Profil (max 2MB)</label>
+    <input id="avatarInput" type="file" accept="image/*" />
+
+    <div id="avatarPreview" class="avatar-preview" aria-hidden="true"></div>
+
+    <div class="modal-actions">
+      <button id="saveProfileBtn" class="btn-primary">Simpan</button>
+      <button id="closeProfileBtn" class="btn-simple">Batal</button>
+    </div>
+    <p style="font-size:12px;color:#666;margin-top:8px;">
+      Foto disimpan ke Firebase Storage (anonymous auth). Hanya thumbnail kecil yang ditampilkan.
+    </p>
+  </div>
 </div>
 
-<!-- ===== FIREBASE SDK ===== -->
+<!-- FIREBASE SDKS -->
 <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
+<script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-auth.js"></script>
 <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-database.js"></script>
+<script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-storage.js"></script>
 
-<!-- ===== MAIN SCRIPT ===== -->
+<!-- MAIN SCRIPT -->
 <script src="script.js"></script>
 
-<!-- ===== SET ROOM TITLE FROM URL ===== -->
+<!-- set room title -->
 <script>
   const params = new URLSearchParams(window.location.search);
   const room = params.get("room") || "global";
-
-  // Format room name tampil cantik
-  const formattedRoom = room.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase());
-
-  document.getElementById("roomTitle").textContent = "Room: " + formattedRoom;
+  const formatted = (room.replace(/_/g, " ")).replace(/\b\w/g, c => c.toUpperCase());
+  document.getElementById("roomTitle").textContent = 'Room: ' + formatted;
 </script>
-
 </body>
 </html>

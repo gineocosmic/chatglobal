@@ -1,24 +1,33 @@
-//---------------------------------------------------------
-// Ambil nama room dari URL, contoh: chat.html?room=bandung
-//---------------------------------------------------------
-const params = new URLSearchParams(window.location.search);
-const room = params.get("room") || "global"; // default room
+// ==========================
+// script.js - FINAL
+// ==========================
 
-//---------------------------------------------------------
-// Anonymous username generator (via localStorage)
-//---------------------------------------------------------
+// --------------------------
+// Helpers & config
+// --------------------------
+const params = new URLSearchParams(window.location.search);
+const room = (params.get("room") || "global").toLowerCase();
+
+// ensure we have a simple room key that uses underscores instead of spaces
+const roomKey = room.replace(/\s+/g, "_");
+
+// anonymous user id + username
+let userId = localStorage.getItem("chatglobal_id");
+if (!userId) {
+  userId = "u" + Math.random().toString(36).slice(2, 10);
+  localStorage.setItem("chatglobal_id", userId);
+}
 let username = localStorage.getItem("chatglobal_user");
 if (!username) {
   username = "User#" + Math.floor(1000 + Math.random() * 9000);
   localStorage.setItem("chatglobal_user", username);
 }
 
-const usernameDisplay = document.getElementById("username");
-if (usernameDisplay) usernameDisplay.value = username;
+// show username in UI if element exists (back-compat)
+const usernameEl = document.getElementById("username");
+if (usernameEl) usernameEl.value = username;
 
-//---------------------------------------------------------
-// Firebase Config
-//---------------------------------------------------------
+// Firebase config (your project)
 var firebaseConfig = {
   apiKey: "AIzaSyB-IAj8gKwvObCoo7hRJNW6HK67UMtBadc",
   authDomain: "chatglobal-ef22a.firebaseapp.com",
@@ -30,153 +39,313 @@ var firebaseConfig = {
   measurementId: "G-4ZBT61V36P"
 };
 if (!firebase.apps.length) firebase.initializeApp(firebaseConfig);
-var database = firebase.database();
+const database = firebase.database();
 
-//---------------------------------------------------------
-// Anti Spam Cooldown + Limit karakter
-//---------------------------------------------------------
-let lastSendTime = 0;
+// UI refs
+const chatBox = document.getElementById("chatBox");
+const typingStatusDiv = document.getElementById("typingStatus");
+const onlineCountDiv = document.getElementById("onlineCount");
+const roomTitleEl = document.getElementById("roomTitle");
+const toastEl = document.getElementById("toast");
+const messageInput = document.getElementById("messageInput");
+
+// constants
 const MAX_CHARS = 250;
-
+let lastSendTime = 0;
 let userInteracted = false;
 const notificationSound = new Audio("https://cdn.pixabay.com/audio/2022/03/15/audio_8bfb58b4fc.mp3");
 notificationSound.preload = "auto";
 
-//---------------------------------------------------------
-// Notification permission
-//---------------------------------------------------------
+// Notification permission on first click
 window.addEventListener("click", () => {
   userInteracted = true;
-  if (Notification.permission === "default") {
-    Notification.requestPermission();
-  }
+  if (Notification.permission === "default") Notification.requestPermission();
 }, { once: true });
 
-//---------------------------------------------------------
-// Send Message
-//---------------------------------------------------------
+// --------------------------
+// Utility functions
+// --------------------------
+function sanitize(s) {
+  if (s === undefined || s === null) return "";
+  return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
+function truncate(s, n){
+  if (!s) return "";
+  return s.length > n ? s.substr(0,n-1) + "…" : s;
+}
+
+// convert country code (e.g. "ID") to flag emoji
+function countryCodeToFlagEmoji(cc) {
+  if (!cc) return "";
+  // cc should be 2 letters
+  cc = cc.toUpperCase();
+  const OFFSET = 0x1F1E6 - 65; // Regional Indicator Symbol Letter A minus 'A' code
+  const chars = [...cc].map(c => String.fromCodePoint(c.charCodeAt(0) + OFFSET)).join('');
+  return chars;
+}
+
+// show toast for N ms
+function showToast(msg, ms = 3000) {
+  if (!toastEl) return;
+  toastEl.textContent = msg;
+  toastEl.style.display = "block";
+  clearTimeout(toastEl._timer);
+  toastEl._timer = setTimeout(() => {
+    toastEl.style.display = "none";
+  }, ms);
+}
+
+// format room display name from key
+function formatRoomName(k) {
+  return k.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase());
+}
+
+// --------------------------
+// Header / room title update
+// --------------------------
+(function initRoomTitle(){
+  const display = formatRoomName(roomKey);
+  if (roomTitleEl) roomTitleEl.textContent = "Room: " + display;
+})();
+
+// --------------------------
+// Presence (online users) and country detection
+// --------------------------
+// We'll detect city/country via ipapi.co; fallback: country empty
+
+let myCity = null;
+let myCountry = null;
+let myCountryCode = null;
+
+// get geo info (non-blocking). For privacy we only store city and country_code.
+fetch("https://ipapi.co/json")
+  .then(r => r.json())
+  .then(info => {
+    myCity = (info.city || "").toLowerCase().replace(/\s+/g,"_") || null;
+    myCountry = info.country_name || null;
+    myCountryCode = info.country_code || null;
+    // after we have country info, we can update presence
+    registerPresence();
+    // show welcome toast with flag
+    const flag = countryCodeToFlagEmoji(myCountryCode);
+    showToast(`Selamat datang di ${formatRoomName(roomKey)} ${flag}`, 3500);
+    // update header online text initially (flag also)
+    updateHeaderOnlineTextPlaceholder();
+  })
+  .catch(err => {
+    console.log("ip detect failed", err);
+    // still register presence even without country
+    registerPresence();
+    updateHeaderOnlineTextPlaceholder();
+  });
+
+// presence path: presence/<roomKey>/<userId>
+const presenceRef = () => database.ref(`presence/${roomKey}/${userId}`);
+
+function registerPresence(){
+  // data we store: username, city, country_code, ts
+  const data = {
+    username,
+    city: myCity || null,
+    country_code: myCountryCode || null,
+    ts: Date.now()
+  };
+
+  // set presence
+  presenceRef().set(data).catch(e => console.log("presence set error", e));
+
+  // ensure removal on disconnect
+  presenceRef().onDisconnect().remove();
+
+  // also refresh ts periodically (heartbeat)
+  setInterval(() => {
+    presenceRef().update({ ts: Date.now() }).catch(()=>{});
+  }, 30 * 1000); // 30s
+}
+
+// listen to presence list and update online counter
+database.ref(`presence/${roomKey}`).on("value", snap => {
+  const val = snap.val() || {};
+  const users = Object.keys(val);
+  const count = users.length;
+
+  // build display: 🟢 N Online • RoomName 🇺🇸
+  const flag = countryCodeToFlagEmoji(myCountryCode);
+  const roomName = formatRoomName(roomKey);
+  const displayText = `🟢 ${count} Online • ${roomName} ${flag}`;
+  if (onlineCountDiv) onlineCountDiv.textContent = displayText;
+
+  // If count is zero (we're probably the only one), still show room + flag handled above
+});
+
+// helper to update header quickly before ipapi resolved
+function updateHeaderOnlineTextPlaceholder(){
+  const flag = countryCodeToFlagEmoji(myCountryCode);
+  const roomName = formatRoomName(roomKey);
+  if (onlineCountDiv) onlineCountDiv.textContent = `🟢 - Online • ${roomName} ${flag || ""}`;
+}
+
+// --------------------------
+// Typing indicator
+// --------------------------
+let typingTimeout;
+function sendTypingSignal() {
+  database.ref(`rooms/${roomKey}/typing/${userId}`).set({ username, ts: Date.now() }).catch(()=>{});
+  clearTimeout(typingTimeout);
+  typingTimeout = setTimeout(() => {
+    database.ref(`rooms/${roomKey}/typing/${userId}`).remove().catch(()=>{});
+  }, 1200);
+}
+
+if (messageInput) {
+  messageInput.addEventListener("input", sendTypingSignal);
+  messageInput.addEventListener("keypress", (e) => {
+    if (e.key === "Enter") {
+      sendTypingSignal(); // ensure stop typing after send (sendMessage will remove)
+    } else {
+      sendTypingSignal();
+    }
+  });
+}
+
+// listen for typing list changes
+database.ref(`rooms/${roomKey}/typing`).on("value", snap => {
+  const val = snap.val() || {};
+  const other = Object.keys(val || {}).filter(id => id !== userId).map(id => val[id].username);
+  if (typingStatusDiv) {
+    typingStatusDiv.textContent = other.length > 0 ? `${other.join(", ")} sedang mengetik...` : "";
+  }
+});
+
+// --------------------------
+// Messages: send / receive
+// --------------------------
 function sendMessage() {
   const input = document.getElementById("messageInput");
+  if (!input) return;
   const message = input.value.trim();
   const now = Date.now();
 
   if (message === "") return;
   if (message.length > MAX_CHARS) {
-    alert("Pesan terlalu panjang (maks 250)");
+    alert(`Pesan terlalu panjang (maks ${MAX_CHARS} karakter)`);
     return;
   }
   if (now - lastSendTime < 3000) {
-    alert("Tunggu 3 detik lagi");
+    alert("Tunggu 3 detik sebelum mengirim pesan lagi");
     return;
   }
   lastSendTime = now;
 
-  database.ref("rooms/" + room + "/messages").push({
+  const payload = {
+    userId,
     name: username,
     text: message,
-    time: new Date().toLocaleTimeString()
-  });
+    ts: Date.now(),
+    time: new Date().toLocaleTimeString(),
+    city: myCity || null,
+    country_code: myCountryCode || null
+  };
 
+  database.ref(`rooms/${roomKey}/messages`).push(payload).catch(e => console.log("push err", e));
   input.value = "";
-  database.ref("rooms/" + room + "/typing/" + username).remove(); // stop typing
+  // remove typing signal on send
+  database.ref(`rooms/${roomKey}/typing/${userId}`).remove().catch(()=>{});
   userInteracted = true;
 }
 
-// Enter event
-const messageInput = document.getElementById("messageInput");
+// support Enter to send also
 if (messageInput) {
   messageInput.addEventListener("keypress", (e) => {
-    if (e.key === "Enter") sendMessage();
-    sendTypingSignal();
+    if (e.key === "Enter") {
+      e.preventDefault();
+      sendMessage();
+    }
   });
-  messageInput.addEventListener("input", sendTypingSignal);
 }
 
-//---------------------------------------------------------
-// TYPING INDICATOR ✍️
-//---------------------------------------------------------
-let typingTimeout;
-function sendTypingSignal() {
-  database.ref("rooms/" + room + "/typing/" + username).set(true);
-
-  clearTimeout(typingTimeout);
-  typingTimeout = setTimeout(() => {
-    database.ref("rooms/" + room + "/typing/" + username).remove();
-  }, 1200);
-}
-
-const typingStatusDiv = document.getElementById("typingStatus");
-
-database.ref("rooms/" + room + "/typing").on("value", snapshot => {
-  const usersTyping = snapshot.val() || {};
-
-  const otherUsers = Object.keys(usersTyping).filter(u => u !== username);
-  typingStatusDiv.textContent =
-    otherUsers.length > 0 ? `${otherUsers.join(", ")} sedang mengetik...` : "";
-});
-
-//---------------------------------------------------------
-// Notification + blinking title
-//---------------------------------------------------------
+// receive messages
 let pageFocus = true;
 let originalTitle = document.title || "Chat Global";
 let blinkInterval = null;
-
 window.onfocus = () => {
   pageFocus = true;
   document.title = originalTitle;
-  clearInterval(blinkInterval);
-  blinkInterval = null;
+  if (blinkInterval) { clearInterval(blinkInterval); blinkInterval = null; }
 };
 window.onblur = () => { pageFocus = false; };
 
-function blinkTitle(msg) {
+function startBlinkTitle(msg) {
   if (blinkInterval) return;
-  let toggle = true;
+  let showAlt = true;
   blinkInterval = setInterval(() => {
-    document.title = toggle ? msg : originalTitle;
-    toggle = !toggle;
+    document.title = showAlt ? msg : originalTitle;
+    showAlt = !showAlt;
   }, 700);
   setTimeout(() => {
-    clearInterval(blinkInterval);
-    blinkInterval = null;
-    document.title = originalTitle;
+    if (blinkInterval) { clearInterval(blinkInterval); blinkInterval = null; document.title = originalTitle; }
   }, 6000);
 }
 
-//---------------------------------------------------------
-// Receive messages realtime
-//---------------------------------------------------------
-database.ref("rooms/" + room + "/messages").on("child_added", snapshot => {
-  const data = snapshot.val();
-  const chatBox = document.getElementById("chatBox");
+// message rendering
+database.ref(`rooms/${roomKey}/messages`).limitToLast(200).on("child_added", snap => {
+  const data = snap.val();
+  if (!data) return;
 
+  // build message element
   const div = document.createElement("div");
   div.classList.add("chat-message");
-  if (data.name === username) div.classList.add("mine");
+  if (data.userId === userId) div.classList.add("mine");
 
-  div.innerHTML = `<strong>${sanitize(data.name)}</strong>: ${sanitize(data.text)}
-  <small>(${sanitize(data.time)})</small>`;
+  // small flag next to username if available
+  const flag = data.country_code ? countryCodeToFlagEmoji(data.country_code) + " " : "";
 
-  chatBox.appendChild(div);
-  chatBox.scrollTop = chatBox.scrollHeight;
+  div.innerHTML = `<strong>${sanitize(flag + (data.name || "Anon"))}</strong>: ${sanitize(data.text)} <small>(${sanitize(data.time)})</small>`;
 
-  if (!pageFocus && data.name !== username) {
-    if (userInteracted) notificationSound.play().catch(()=>{});
-    blinkTitle("🔔 Pesan Baru!");
+  if (chatBox) {
+    chatBox.appendChild(div);
+    chatBox.scrollTop = chatBox.scrollHeight;
+  }
+
+  // notifications if not focused & message not from self
+  if (!pageFocus && data.userId !== userId) {
+    if (userInteracted) {
+      notificationSound.play().catch(()=>{});
+    }
+    startBlinkTitle("🔔 Pesan Baru!");
     if (Notification.permission === "granted") {
-      new Notification("Pesan Baru", {
-        body: `${data.name}: ${data.text}`
-      });
+      try {
+        const n = new Notification(`${data.name}`, { body: truncate(data.text || "", 80) });
+        n.onclick = () => { window.focus(); n.close(); };
+      } catch (e) {
+        console.log("notif error", e);
+      }
     }
   }
 });
 
-//---------------------------------------------------------
-// Simple sanitizer
-//---------------------------------------------------------
-function sanitize(s) {
-  return String(s).replace(/[&<>]/g, c => ({
-    "&": "&amp;", "<": "&lt;", ">": "&gt;"
-  }[c]));
-}
+// --------------------------
+// Cleanup on unload
+// --------------------------
+window.addEventListener("beforeunload", () => {
+  // remove typing and presence (onDisconnect ideally handles it; but ensure remove)
+  database.ref(`rooms/${roomKey}/typing/${userId}`).remove().catch(()=>{});
+  presenceRef().remove().catch(()=>{});
+});
+
+// --------------------------
+// Small UI init: show room name & flag in header
+// --------------------------
+(function updateHeaderInitial(){
+  // if ipapi not ready yet, the presence registration will update later
+  const roomPretty = formatRoomName(roomKey);
+  // we cannot guarantee country flag yet; update will occur after ipapi fetch
+  if (roomTitleEl) {
+    roomTitleEl.textContent = `Room: ${roomPretty}`;
+  }
+})();
+
+// --------------------------
+// End of file
+// --------------------------
